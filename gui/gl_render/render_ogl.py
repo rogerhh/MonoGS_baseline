@@ -4,20 +4,21 @@ import numpy as np
 import torch
 from OpenGL import GL as gl
 
+device = "cuda:0"
+
 from . import util, util_gau
 
 _sort_buffer_xyz = None
 _sort_buffer_gausid = None  # used to tell whether gaussian is reloaded
 
-
 def _sort_gaussian_torch(gaus, view_mat):
     global _sort_buffer_gausid, _sort_buffer_xyz
     if _sort_buffer_gausid != id(gaus):
-        _sort_buffer_xyz = torch.tensor(gaus.xyz).cuda()
+        _sort_buffer_xyz = torch.tensor(gaus.xyz).cuda(device)
         _sort_buffer_gausid = id(gaus)
 
-    xyz = torch.tensor(gaus.xyz).cuda()
-    view_mat = torch.tensor(view_mat).cuda()
+    xyz = torch.tensor(gaus.xyz).cuda(device)
+    view_mat = torch.tensor(view_mat).cuda(device)
     xyz_view = view_mat[None, :3, :3] @ xyz[..., None] + view_mat[None, :3, 3, None]
     depth = xyz_view[:, 2, 0]
     index = torch.argsort(depth)

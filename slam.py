@@ -24,12 +24,16 @@ from utils.slam_frontend import FrontEnd
 
 class SLAM:
     def __init__(self, config, save_dir=None):
+        self.config = config
+        self.device = self.config["model_params"]["data_device"]
+        torch.cuda.set_device(self.device)
+
         start = torch.cuda.Event(enable_timing=True)
         end = torch.cuda.Event(enable_timing=True)
 
+
         start.record()
 
-        self.config = config
         self.save_dir = save_dir
         model_params = munchify(config["model_params"])
         opt_params = munchify(config["opt_params"])
@@ -58,7 +62,7 @@ class SLAM:
 
         self.gaussians.training_setup(opt_params)
         bg_color = [0, 0, 0]
-        self.background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+        self.background = torch.tensor(bg_color, dtype=torch.float32, device=self.device)
 
         frontend_queue = mp.Queue()
         backend_queue = mp.Queue()
@@ -107,6 +111,7 @@ class SLAM:
             time.sleep(5)
 
         backend_process.start()
+
         self.frontend.run()
         backend_queue.put(["pause"])
 
@@ -117,6 +122,8 @@ class SLAM:
         FPS = N_frames / (start.elapsed_time(end) * 0.001)
         Log("Total time", start.elapsed_time(end) * 0.001, tag="Eval")
         Log("Total FPS", N_frames / (start.elapsed_time(end) * 0.001), tag="Eval")
+        print("Total time", start.elapsed_time(end) * 0.001)
+        print("Total FPS", N_frames / (start.elapsed_time(end) * 0.001))
 
         if self.eval_rendering:
             self.gaussians = self.frontend.gaussians
@@ -244,7 +251,7 @@ if __name__ == "__main__":
             project="MonoGS",
             name=f"{tmp}_{current_datetime}",
             config=config,
-            mode=None if config["Results"]["use_wandb"] else "disabled",
+            mode="offline" if config["Results"]["use_wandb"] else "disabled",
         )
         wandb.define_metric("frame_idx")
         wandb.define_metric("ate*", step_metric="frame_idx")

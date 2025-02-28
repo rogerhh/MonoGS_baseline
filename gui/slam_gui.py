@@ -30,12 +30,13 @@ from utils.logging_utils import Log
 
 o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
 
+device="cuda:0"
 
 class SLAM_GUI:
     def __init__(self, params_gui=None):
         self.step = 0
         self.process_finished = False
-        self.device = "cuda"
+        self.device = device
 
         self.frustum_dict = {}
         self.model_dict = {}

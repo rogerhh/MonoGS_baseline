@@ -27,7 +27,8 @@ class BackEnd(mp.Process):
         self.live_mode = False
 
         self.pause = False
-        self.device = "cuda"
+        self.device = config["model_params"]["data_device"]
+        torch.cuda.set_device(self.device)
         self.dtype = torch.float32
         self.monocular = config["Training"]["monocular"]
         self.iteration_count = 0
@@ -262,7 +263,7 @@ class BackEnd(mp.Process):
                                 self.gaussians.n_obs <= prune_coviz, mask
                             )
                         if to_prune is not None and self.monocular:
-                            self.gaussians.prune_points(to_prune.cuda())
+                            self.gaussians.prune_points(to_prune.cuda(self.device))
                             for idx in range((len(current_window))):
                                 current_idx = current_window[idx]
                                 self.occ_aware_visibility[current_idx] = (
@@ -336,7 +337,7 @@ class BackEnd(mp.Process):
                 render_pkg["radii"],
             )
 
-            gt_image = viewpoint_cam.original_image.cuda()
+            gt_image = viewpoint_cam.original_image.cuda(self.device)
             Ll1 = l1_loss(image, gt_image)
             loss = (1.0 - self.opt_params.lambda_dssim) * (
                 Ll1

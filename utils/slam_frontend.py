@@ -40,8 +40,11 @@ class FrontEnd(mp.Process):
 
         self.gaussians = None
         self.cameras = dict()
-        self.device = "cuda:0"
+        self.device = config["model_params"]["data_device"]
+        torch.cuda.set_device(self.device)
         self.pause = False
+
+        self.tracking_time_sum = 0
 
     def set_hyperparams(self):
         self.save_dir = self.config["Results"]["save_dir"]
@@ -58,7 +61,7 @@ class FrontEnd(mp.Process):
         rgb_boundary_threshold = self.config["Training"]["rgb_boundary_threshold"]
         self.kf_indices.append(cur_frame_idx)
         viewpoint = self.cameras[cur_frame_idx]
-        gt_img = viewpoint.original_image.cuda()
+        gt_img = viewpoint.original_image.cuda(self.device)
         valid_rgb = (gt_img.sum(dim=0) > rgb_boundary_threshold)[None]
         if self.monocular:
             if depth is None:
@@ -126,6 +129,7 @@ class FrontEnd(mp.Process):
         self.reset = False
 
     def tracking(self, cur_frame_idx, viewpoint):
+        print("Frame: ", cur_frame_idx)
         prev = self.cameras[cur_frame_idx - self.use_every_n_frames]
         viewpoint.update_RT(prev.R, prev.T)
 
@@ -159,25 +163,38 @@ class FrontEnd(mp.Process):
             }
         )
 
+        tracking_start = time.time()
         pose_optimizer = torch.optim.Adam(opt_params)
         for tracking_itr in range(self.tracking_itr_num):
+            tracking_iter_start = time.time()
             render_pkg = render(
-                viewpoint, self.gaussians, self.pipeline_params, self.background
+                viewpoint, self.gaussians, self.pipeline_params, self.background, tracking=True,
             )
             image, depth, opacity = (
                 render_pkg["render"],
                 render_pkg["depth"],
                 render_pkg["opacity"],
             )
-            pose_optimizer.zero_grad()
             loss_tracking = get_loss_tracking(
                 self.config, image, depth, opacity, viewpoint
             )
+            first_order_opt_start = time.time()
+            pose_optimizer.zero_grad()
             loss_tracking.backward()
+            first_order_backward_end = time.time()
 
             with torch.no_grad():
                 pose_optimizer.step()
+                first_order_step_end = time.time()
                 converged = update_pose(viewpoint)
+                first_order_update_end = time.time()
+
+            first_order_opt_end = time.time()
+            # print("First order optimization time ms: ", (first_order_opt_end - first_order_opt_start) * 1000)
+            # print("First order backward time ms: ", (first_order_backward_end - first_order_opt_start) * 1000)
+            # print("First order step time ms: ", (first_order_step_end - first_order_backward_end) * 1000)
+            # print("First order update time ms: ", (first_order_update_end - first_order_step_end) * 1000)
+            # print("Total first order time ms: ", (first_order_opt_end - tracking_iter_start) * 1000)
 
             if tracking_itr % 10 == 0:
                 self.q_main2vis.put(
@@ -191,6 +208,13 @@ class FrontEnd(mp.Process):
                 )
             if converged:
                 break
+
+        tracking_end = time.time()
+        print("Tracking time ms: ", (tracking_end - tracking_start) * 1000)
+        self.tracking_time_sum += (tracking_end - tracking_start)
+        if (cur_frame_idx + 1) % 10 == 0:
+            print("Average tracking time ms: ", (self.tracking_time_sum / 10) * 1000)
+            self.tracking_time_sum = 0
 
         self.median_depth = get_median_depth(depth, opacity)
         return render_pkg

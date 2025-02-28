@@ -36,14 +36,16 @@ class GaussianModel:
         self.active_sh_degree = 0
         self.max_sh_degree = sh_degree
 
-        self._xyz = torch.empty(0, device="cuda")
-        self._features_dc = torch.empty(0, device="cuda")
-        self._features_rest = torch.empty(0, device="cuda")
-        self._scaling = torch.empty(0, device="cuda")
-        self._rotation = torch.empty(0, device="cuda")
-        self._opacity = torch.empty(0, device="cuda")
-        self.max_radii2D = torch.empty(0, device="cuda")
-        self.xyz_gradient_accum = torch.empty(0, device="cuda")
+        self.device = "cuda:0" if config is None else config["model_params"]["data_device"]
+
+        self._xyz = torch.empty(0, device=self.device)
+        self._features_dc = torch.empty(0, device=self.device)
+        self._features_rest = torch.empty(0, device=self.device)
+        self._scaling = torch.empty(0, device=self.device)
+        self._rotation = torch.empty(0, device=self.device)
+        self._opacity = torch.empty(0, device=self.device)
+        self.max_radii2D = torch.empty(0, device=self.device)
+        self.xyz_gradient_accum = torch.empty(0, device=self.device)
 
         self.unique_kfIDs = torch.empty(0).int()
         self.n_obs = torch.empty(0).int()
@@ -170,19 +172,19 @@ class GaussianModel:
         )
         self.ply_input = pcd
 
-        fused_point_cloud = torch.from_numpy(np.asarray(pcd.points)).float().cuda()
-        fused_color = RGB2SH(torch.from_numpy(np.asarray(pcd.colors)).float().cuda())
+        fused_point_cloud = torch.from_numpy(np.asarray(pcd.points)).float().cuda(self.device)
+        fused_color = RGB2SH(torch.from_numpy(np.asarray(pcd.colors)).float().cuda(self.device))
         features = (
             torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2))
             .float()
-            .cuda()
+            .cuda(self.device)
         )
         features[:, :3, 0] = fused_color
         features[:, 3:, 1:] = 0.0
 
         dist2 = (
             torch.clamp_min(
-                distCUDA2(torch.from_numpy(np.asarray(pcd.points)).float().cuda()),
+                distCUDA2(torch.from_numpy(np.asarray(pcd.points)).float().cuda(self.device)),
                 0.0000001,
             )
             * point_size
@@ -191,12 +193,12 @@ class GaussianModel:
         if not self.isotropic:
             scales = scales.repeat(1, 3)
 
-        rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
+        rots = torch.zeros((fused_point_cloud.shape[0], 4), device=self.device)
         rots[:, 0] = 1
         opacities = inverse_sigmoid(
             0.5
             * torch.ones(
-                (fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"
+                (fused_point_cloud.shape[0], 1), dtype=torch.float, device=self.device
             )
         )
 
@@ -244,8 +246,8 @@ class GaussianModel:
 
     def training_setup(self, training_args):
         self.percent_dense = training_args.percent_dense
-        self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
-        self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
+        self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device=self.device)
+        self.denom = torch.zeros((self.get_xyz.shape[0], 1), device=self.device)
 
         l = [
             {
@@ -435,33 +437,31 @@ class GaussianModel:
             rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
 
         self._xyz = nn.Parameter(
-            torch.tensor(xyz, dtype=torch.float, device="cuda").requires_grad_(True)
+            torch.tensor(xyz, dtype=torch.float, device=self.device).requires_grad_(True)
         )
         self._features_dc = nn.Parameter(
-            torch.tensor(features_dc, dtype=torch.float, device="cuda")
+            torch.tensor(features_dc, dtype=torch.float, device=self.device)
             .transpose(1, 2)
             .contiguous()
             .requires_grad_(True)
         )
         self._features_rest = nn.Parameter(
-            torch.tensor(features_extra, dtype=torch.float, device="cuda")
+            torch.tensor(features_extra, dtype=torch.float, device=self.device)
             .transpose(1, 2)
             .contiguous()
             .requires_grad_(True)
         )
         self._opacity = nn.Parameter(
-            torch.tensor(opacities, dtype=torch.float, device="cuda").requires_grad_(
-                True
-            )
+            torch.tensor(opacities, dtype=torch.float, device=self.device).requires_grad_(True)
         )
         self._scaling = nn.Parameter(
-            torch.tensor(scales, dtype=torch.float, device="cuda").requires_grad_(True)
+            torch.tensor(scales, dtype=torch.float, device=self.device).requires_grad_(True)
         )
         self._rotation = nn.Parameter(
-            torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True)
+            torch.tensor(rots, dtype=torch.float, device=self.device).requires_grad_(True)
         )
         self.active_sh_degree = self.max_sh_degree
-        self.max_radii2D = torch.zeros((self._xyz.shape[0]), device="cuda")
+        self.max_radii2D = torch.zeros((self._xyz.shape[0]), device=self.device)
         self.unique_kfIDs = torch.zeros((self._xyz.shape[0]))
         self.n_obs = torch.zeros((self._xyz.shape[0]), device="cpu").int()
 
@@ -582,9 +582,9 @@ class GaussianModel:
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
 
-        self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
-        self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
-        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+        self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device=self.device)
+        self.denom = torch.zeros((self.get_xyz.shape[0], 1), device=self.device)
+        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device=self.device)
         if new_kf_ids is not None:
             self.unique_kfIDs = torch.cat((self.unique_kfIDs, new_kf_ids)).int()
         if new_n_obs is not None:
@@ -593,7 +593,7 @@ class GaussianModel:
     def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
         n_init_points = self.get_xyz.shape[0]
         # Extract points that satisfy the gradient condition
-        padded_grad = torch.zeros((n_init_points), device="cuda")
+        padded_grad = torch.zeros((n_init_points), device=self.device)
         padded_grad[: grads.shape[0]] = grads.squeeze()
         selected_pts_mask = torch.where(padded_grad >= grad_threshold, True, False)
         selected_pts_mask = torch.logical_and(
@@ -603,7 +603,7 @@ class GaussianModel:
         )
 
         stds = self.get_scaling[selected_pts_mask].repeat(N, 1)
-        means = torch.zeros((stds.size(0), 3), device="cuda")
+        means = torch.zeros((stds.size(0), 3), device=self.device)
         samples = torch.normal(mean=means, std=stds)
         rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N, 1, 1)
         new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[
@@ -634,7 +634,7 @@ class GaussianModel:
         prune_filter = torch.cat(
             (
                 selected_pts_mask,
-                torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool),
+                torch.zeros(N * selected_pts_mask.sum(), device=self.device, dtype=bool),
             )
         )
 
