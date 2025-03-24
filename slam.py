@@ -32,7 +32,6 @@ class SLAM:
         end = torch.cuda.Event(enable_timing=True)
 
 
-        start.record()
 
         self.save_dir = save_dir
         model_params = munchify(config["model_params"])
@@ -110,6 +109,7 @@ class SLAM:
             gui_process.start()
             time.sleep(5)
 
+        start.record()
         backend_process.start()
 
         self.frontend.run()
