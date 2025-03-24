@@ -168,7 +168,7 @@ class FrontEnd(mp.Process):
         for tracking_itr in range(self.tracking_itr_num):
             tracking_iter_start = time.time()
             render_pkg = render(
-                viewpoint, self.gaussians, self.pipeline_params, self.background, tracking=True,
+                viewpoint, self.gaussians, self.pipeline_params, self.background,
             )
             image, depth, opacity = (
                 render_pkg["render"],
