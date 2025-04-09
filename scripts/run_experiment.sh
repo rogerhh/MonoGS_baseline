@@ -13,7 +13,7 @@ cd "$PROJECT_DIR"
 CONFIG="$PROJECT_DIR/configs/mono/tum/fr3_office.yaml"
 
 # Run the experiment
-# python3 slam.py --config $CONFIG --eval 2>&1 | tee run.log
+python3 slam.py --config $CONFIG --eval 2>&1 | tee run.log
 
 # Check the log to see where the results are saved
 grep_str="$(grep "saving results in" run.log)"
